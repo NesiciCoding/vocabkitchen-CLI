@@ -964,9 +964,14 @@ jobs:
           body = "\n".join(lines)
 
           comments = api_paginated(f"/repos/{repo}/issues/{pr}/comments?per_page=100")
+          # Match the current marker and the pre-rebrand "vocabkitchen-perf" one,
+          # so a PR opened before the rebrand keeps its single perf comment
+          # updated in place instead of gaining a duplicate. Only the new marker
+          # is ever written (see `lines` above).
           found = next((c for c in comments
                         if c.get("user", {}).get("login") == "github-actions[bot]"
-                        and "efl-tools-perf" in c.get("body", "")), None)
+                        and ("efl-tools-perf" in c.get("body", "")
+                             or "vocabkitchen-perf" in c.get("body", ""))), None)
           if found:
               api("PATCH", f"/repos/{repo}/issues/comments/{found['id']}", {"body": body})
               print("comment updated")
