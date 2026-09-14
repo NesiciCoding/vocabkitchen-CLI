@@ -225,8 +225,8 @@ print("check_engine() / engine_ready()")
 # --------------------------------------------------------------------------
 
 st = tui.check_engine()
-check("check_engine returns the documented keys",
-      set(st) == {"python", "spacy", "model", "pypdf"}, str(sorted(st)))
+check("check_engine returns at least the core documented keys",
+      {"python", "spacy", "model", "pypdf"} <= set(st), str(sorted(st)))
 check("engine_ready needs both spaCy and the model",
       tui.engine_ready({"spacy": "3.8", "model": True}) is True
       and tui.engine_ready({"spacy": None, "model": True}) is False

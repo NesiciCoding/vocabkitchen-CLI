@@ -160,7 +160,7 @@ TOOLS = [
             {"key": "targets", "label": "Compare levels", "kind": "text", "flag": "--targets",
              "value": "", "hint": "e.g. A2,B1,B2"},
             {"key": "sort", "label": "Sort by", "kind": "choice", "flag": "--sort",
-             "choices": ["level", "name", "above"], "value": "level"},
+             "choices": ["level", "typical", "reached", "words", "name"], "value": "level"},
             {"key": "format", "label": "Output", "kind": "choice", "flag": "--format",
              "choices": ["pretty", "json", "csv"], "value": "pretty"},
             {"key": "extra", "label": "Extra args", "kind": "extra", "value": ""},
@@ -213,7 +213,12 @@ def build_argv(tool):
 def check_engine():
     """Probe the venv/engine. Returns a dict of human-readable status strings."""
     py = engine_python()
-    status = {"python": py, "spacy": None, "model": None, "pypdf": None}
+    status = {"python": py, "spacy": None, "model": None, "pypdf": None,
+              "pypdf_error": None}
+    # For pypdf (an optional dependency): ModuleNotFoundError means simply absent,
+    # while any other import error means it's installed but broken — the probe
+    # reports those two cases distinctly so the diagnostics can tell them apart.
+    # The probe source is kept ASCII-only (it runs via `python -c`).
     probe = (
         "import json,sys\n"
         "r={}\n"
@@ -225,7 +230,8 @@ def check_engine():
         "except Exception: r['model']=False\n"
         "try:\n"
         "    import pypdf; r['pypdf']=getattr(pypdf,'__version__','yes')\n"
-        "except Exception: r['pypdf']=None\n"
+        "except ModuleNotFoundError: r['pypdf']=None\n"
+        "except Exception as e: r['pypdf']=None; r['pypdf_error']=str(e) or e.__class__.__name__\n"
         "print(json.dumps(r))\n"
     )
     try:
@@ -532,9 +538,12 @@ class App:
                 ("English model (en_core_web_sm)",
                  "installed" if status["model"] else "not installed", bool(status["model"])),
                 ("pypdf (PDF input, optional)",
-                 status["pypdf"] or "not installed",
-                 # 3-state: installed (✓), or absent-but-optional (○, not ✗).
-                 True if status["pypdf"] else None),
+                 status["pypdf"] or ("installed but not importable: %s"
+                                     % status["pypdf_error"]
+                                     if status.get("pypdf_error") else "not installed"),
+                 # 3-state: installed (✓), broken install (✗), or absent-but-optional (○).
+                 True if status["pypdf"]
+                 else (False if status.get("pypdf_error") else None)),
             ]
             top = 3
             for i, (label, val, ok) in enumerate(rows):
@@ -698,7 +707,13 @@ def _fallback_tool(tool):
     print("\n== %s ==" % tool["name"])
     print(tool["blurb"])
     if tool["needs_engine"] and not engine_ready():
-        installer = "install.ps1" if os.name == "nt" else "./install.sh"
+        if os.name == "nt":
+            # Show the exact runner + path installer_invocation() would use
+            # (it may pick pwsh over powershell and uses an absolute path).
+            argv, err = installer_invocation()
+            installer = subprocess.list2cmdline(argv) if argv else (err or "install.ps1")
+        else:
+            installer = "./install.sh"
         print("\n⚠ This tool needs spaCy + en_core_web_sm, which are not installed.")
         print("  Run:  %s   (or choose 'd' from the menu)\n" % installer)
     # Ask each editable field, keeping defaults on blank input.
