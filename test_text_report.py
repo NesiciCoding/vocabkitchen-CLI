@@ -83,7 +83,7 @@ check("engine payload matches text_report's shape",
           tr.analyze(_CAT, with_grammar=False)))
 
 # --- Phase 5: the payload contract (schema version + grammar criteria) --------
-check("SCHEMA_VERSION is 1.3", engine.SCHEMA_VERSION == "1.3")
+check("SCHEMA_VERSION is 1.4", engine.SCHEMA_VERSION == "1.4")
 _schema_doc = json.load(open(os.path.join(HERE, "analysis.schema.json"),
                              encoding="utf-8"))
 check("analysis.schema.json matches payload_schema()",
@@ -301,6 +301,33 @@ check("readability fre frozen", _read["fleschReadingEase"] == 116.1,
 check("readability fk frozen", _read["fleschKincaidGrade"] == -1.4)
 check("readability description", _read["description"] == "very easy")
 check("readability wordless -> None", tr.compute_readability("!!!", 0) is None)
+
+# --- unit: writing stats (shared with RubricMaker via sync/writing-fixtures.json)
+_FX = json.load(open(os.path.join(HERE, "sync", "writing-fixtures.json"),
+                     encoding="utf-8"))
+check("transition list matches the shared fixture",
+      engine.TRANSITION_WORDS == _FX["transitionWords"])
+for _case in _FX["essayStats"]:
+    _ws = engine.compute_writing_stats(_case["text"])
+    _ok = all(_ws[k] == _case[k] for k in (
+        "sentenceCount", "sentenceLengths", "avgWordsPerSentence",
+        "sentenceLengthVariance", "sentenceLengthStdDev",
+        "minSentenceLength", "maxSentenceLength"))
+    if "transitions" in _case:
+        _t = _case["transitions"]
+        _ok = _ok and (_ws["transitions"]["total"] == _t["total"]
+                       and _ws["transitions"]["per100Words"] == _t["per100Words"]
+                       and _ws["transitions"]["byPhrase"] == _t["byPhrase"])
+    check(f"writing stats match the shared fixture: {_case['text'][:24]!r}", _ok)
+for _case in _FX["transitions"]:
+    _ws = engine.compute_writing_stats(_case["text"])
+    check("transitions match the shared fixture",
+          _ws["transitions"]["total"] == _case["total"]
+          and _ws["transitions"]["byCategory"] == _case["byCategory"])
+check("writing stats wordless -> None",
+      engine.compute_writing_stats("!!!") is None)
+check("payload carries writingStats",
+      _schema_pl["writingStats"]["sentenceCount"] == 1)
 
 # --- unit: coverage figure ----------------------------------------------------
 _ordered, _total = vp.profile(_CAT, _LEVELS)
