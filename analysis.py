@@ -255,7 +255,8 @@ def payload_schema():
 # reported alongside — never instead of — the CEFR bands).
 # ---------------------------------------------------------------------------
 
-_SENT_SPLIT_RE = re.compile(r"[.!?]+(?:\s+|$)")
+# A run of . ! ? plus any closing quotes/brackets, then whitespace or the end.
+_SENT_SPLIT_RE = re.compile(r"[.!?]+[\"'”’)\]»]*(?:\s+|$)")
 
 
 def count_sentences(text):
@@ -381,23 +382,29 @@ _TRANSITION_RE = re.compile(
 _TRANSITION_CATEGORY = {p: c for c, p in _TRANSITION_ENTRIES}
 
 
-def _word_tokens(text):
-    return [t for t in vp.tokenize(text) if t not in vp.PLACEHOLDERS]
+def _essay_words(text):
+    """Whitespace-separated words, as a student's live word count sees them.
+
+    Kept apart from the vocab tokenizer (which splits "don't" in two) so the
+    figures match RubricMaker's essay word count; readability keeps using the
+    vocab tokenizer.
+    """
+    return [w for w in text.split() if re.search(r"[^\W_]", w)]
 
 
 def compute_writing_stats(text):
     """Sentence-length statistics and transition-word counts, or None when wordless."""
-    words = _word_tokens(text)
+    words = _essay_words(text)
     if not words:
         return None
-    lengths = [len(_word_tokens(s)) for s in _SENT_SPLIT_RE.split(text)
+    lengths = [len(_essay_words(s)) for s in _SENT_SPLIT_RE.split(text)
                if s.strip()]
     mean = sum(lengths) / len(lengths)
     variance = sum((n - mean) ** 2 for n in lengths) / len(lengths)
     by_category = {cat: 0 for cat in TRANSITION_WORDS}
     by_phrase = {}
     total = 0
-    for m in _TRANSITION_RE.finditer(text):
+    for m in _TRANSITION_RE.finditer(" ".join(text.split())):
         phrase = m.group(1).lower()
         by_category[_TRANSITION_CATEGORY[phrase]] += 1
         by_phrase[phrase] = by_phrase.get(phrase, 0) + 1
