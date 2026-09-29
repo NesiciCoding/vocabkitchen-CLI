@@ -364,6 +364,11 @@ It reports:
   **verdict** (*"on level"* / *"reaches B2 — pre-teach 6 words, 2 structures"*).
 - **Readability line** — Flesch–Kincaid grade + Flesch Reading Ease, reported
   *alongside* — never instead of — the CEFR bands (omit with `--no-readability`).
+- **Writing stats** — the payload's `writingStats` carries sentence-length spread
+  (mean, variance, std-dev, min/max) and transition-word counts by category, for
+  essay feedback. It mirrors RubricMaker's `essayTextStats.ts`; the transition list
+  and expected values live in `sync/writing-fixtures.json`, asserted by both
+  test suites so the two can't drift.
 - **`--export csv|md|flashcards`** — write the above-target words and
   structures as a ready-made **pre-teaching list** for the class: a CSV
   spreadsheet (`type,item,level,count,category,example`), a Markdown handout
@@ -500,7 +505,7 @@ carries an example sentence from the text (`context` on words, `examples` on
 structures), which the exports use to show every item in context.
 
 **The payload is a versioned contract.** Every payload carries `schemaVersion`
-(currently `1.3`), and the full JSON Schema is checked in at
+(currently `1.4`), and the full JSON Schema is checked in at
 `analysis.schema.json` (kept byte-equal to `analysis.payload_schema()` by the
 tests and CI, and printable with `--schema`). With the grammar side enabled,
 the payload also carries `grammarCriteria`: one entry per registered

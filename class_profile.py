@@ -769,6 +769,7 @@ def export_payload(row, ordered, ctx, target, suggest=False, gap_report=False,
         "grammar_error": ctx["grammar_error"],
         "cefrj_levels": ctx["cefrj_levels"],
         "readability": tr.compute_readability(text, row["totalWordCount"]),
+        "writingStats": engine.compute_writing_stats(text),
     }
     payload = engine.payload(
         pieces, text, vocab_base, target_level=target, suggest=suggest,

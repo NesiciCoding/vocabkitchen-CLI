@@ -66,11 +66,14 @@ validated against :func:`payload_schema` (also checked in as
 ``cambridge``      each shown band mapped to its Cambridge qualification.
 ``cando``          each shown band framed as a CEFR Can-Do descriptor.
 ``readability``    Flesch Reading Ease + Flesch–Kincaid grade.
+``writingStats``   Sentence-length spread + transition-word counts.
 ``file``           (class_profile per-text payloads only) the source file.
 
 Version history
 ~~~~~~~~~~~~~~~
 
+``1.4`` — added ``writingStats`` (sentence-length spread and transition-word
+counts for essay feedback; mirrors RubricMaker's essayTextStats.ts).
 ``1.3`` — ``grammarComments`` entries gain ``rewrite``: pre-teach entries
 carry a curated target-level rewording hint (from
 ``WordLists/structure-rewrites.csv``) so the "or rewrite" half of the
@@ -96,7 +99,7 @@ import grammar_profile as gp
 
 # The payload contract version. Bump when the payload shape changes
 # incompatibly; RubricMaker and any other consumer should key off this.
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"
 
 _CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]
 _LEVEL_INDEX = {lvl: i for i, lvl in enumerate(_CEFR_ORDER)}
@@ -128,7 +131,7 @@ def payload_schema():
                      "aboveTarget", "coverage", "estimatedLevel",
                      "verdict", "grammarGap", "grammarGapError",
                      "curriculum", "curriculumError",
-                     "cambridge", "cando", "readability"],
+                     "cambridge", "cando", "readability", "writingStats"],
         "properties": {
             "schemaVersion": {"type": "string", "enum": [SCHEMA_VERSION]},
             "totalWordCount": {"type": "integer", "minimum": 0},
@@ -227,6 +230,22 @@ def payload_schema():
                 "fleschKincaidGrade": {"type": "number"},
                 "description": {"type": "string"},
             }},
+            "writingStats": {"type": ["object", "null"], "properties": {
+                "sentenceCount": {"type": "integer", "minimum": 0},
+                "sentenceLengths": {"type": "array",
+                                    "items": {"type": "integer"}},
+                "avgWordsPerSentence": {"type": "number"},
+                "sentenceLengthVariance": {"type": "number"},
+                "sentenceLengthStdDev": {"type": "number"},
+                "minSentenceLength": {"type": "integer"},
+                "maxSentenceLength": {"type": "integer"},
+                "transitions": {"type": "object", "properties": {
+                    "total": {"type": "integer", "minimum": 0},
+                    "per100Words": {"type": "number"},
+                    "byCategory": {"type": "object"},
+                    "byPhrase": {"type": "object"},
+                }},
+            }},
         },
     }
 
@@ -236,7 +255,8 @@ def payload_schema():
 # reported alongside — never instead of — the CEFR bands).
 # ---------------------------------------------------------------------------
 
-_SENT_SPLIT_RE = re.compile(r"[.!?]+(?:\s+|$)")
+# A run of . ! ? plus any closing quotes/brackets, then whitespace or the end.
+_SENT_SPLIT_RE = re.compile(r"[.!?]+[\"'”’)\]»]*(?:\s+|$)")
 
 
 def count_sentences(text):
@@ -312,6 +332,97 @@ def compute_readability(text, word_count):
         "fleschReadingEase": round(fre, 1),
         "fleschKincaidGrade": round(fk, 1),
         "description": _flesch_description(fre),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Writing statistics — sentence-length spread and transition-word frequency,
+# for essay feedback. Kept identical to RubricMaker's essayTextStats.ts; the
+# transition list and expected values live in sync/writing-fixtures.json and
+# are asserted on both sides.
+# ---------------------------------------------------------------------------
+
+# Multi-word phrases match before their parts (longest first, see _TRANSITION_RE).
+TRANSITION_WORDS = {
+    "addition": [
+        "in addition", "additionally", "furthermore", "moreover", "also",
+        "besides", "as well as", "not only",
+    ],
+    "contrast": [
+        "however", "but", "although", "though", "whereas", "while",
+        "nevertheless", "nonetheless", "on the other hand", "in contrast",
+        "despite", "in spite of", "yet", "instead",
+    ],
+    "cause": [
+        "because", "since", "therefore", "thus", "consequently",
+        "as a result", "hence", "so that", "due to", "owing to",
+    ],
+    "sequence": [
+        "first", "firstly", "second", "secondly", "third", "thirdly", "next",
+        "then", "finally", "afterwards", "meanwhile", "subsequently",
+        "eventually", "at first", "in the end",
+    ],
+    "example": [
+        "for example", "for instance", "such as", "in particular", "namely",
+        "to illustrate",
+    ],
+    "conclusion": [
+        "in conclusion", "to conclude", "in summary", "to sum up", "overall",
+        "in short", "all in all", "to summarise", "to summarize",
+    ],
+}
+
+_TRANSITION_ENTRIES = sorted(
+    ((cat, phrase) for cat, phrases in TRANSITION_WORDS.items()
+     for phrase in phrases),
+    key=lambda e: -len(e[1]))
+_TRANSITION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(p) for _c, p in _TRANSITION_ENTRIES) + r")\b",
+    re.IGNORECASE)
+_TRANSITION_CATEGORY = {p: c for c, p in _TRANSITION_ENTRIES}
+
+
+def _essay_words(text):
+    """Whitespace-separated words, as a student's live word count sees them.
+
+    Kept apart from the vocab tokenizer (which splits "don't" in two) so the
+    figures match RubricMaker's essay word count; readability keeps using the
+    vocab tokenizer.
+    """
+    return [w for w in text.split() if re.search(r"[^\W_]", w)]
+
+
+def compute_writing_stats(text):
+    """Sentence-length statistics and transition-word counts, or None when wordless."""
+    words = _essay_words(text)
+    if not words:
+        return None
+    lengths = [len(_essay_words(s)) for s in _SENT_SPLIT_RE.split(text)
+               if s.strip()]
+    mean = sum(lengths) / len(lengths)
+    variance = sum((n - mean) ** 2 for n in lengths) / len(lengths)
+    by_category = {cat: 0 for cat in TRANSITION_WORDS}
+    by_phrase = {}
+    total = 0
+    for m in _TRANSITION_RE.finditer(" ".join(text.split())):
+        phrase = m.group(1).lower()
+        by_category[_TRANSITION_CATEGORY[phrase]] += 1
+        by_phrase[phrase] = by_phrase.get(phrase, 0) + 1
+        total += 1
+    return {
+        "sentenceCount": len(lengths),
+        "sentenceLengths": lengths,
+        "avgWordsPerSentence": round(mean, 1),
+        "sentenceLengthVariance": round(variance, 1),
+        "sentenceLengthStdDev": round(variance ** 0.5, 1),
+        "minSentenceLength": min(lengths),
+        "maxSentenceLength": max(lengths),
+        "transitions": {
+            "total": total,
+            "per100Words": round(total / len(words) * 100, 1),
+            "byCategory": by_category,
+            "byPhrase": by_phrase,
+        },
     }
 
 
@@ -1036,6 +1147,7 @@ def profile(text, engine, with_grammar=True, with_readability=True):
         "cefrj_levels": engine.cefrj_levels if with_grammar else None,
         "readability": (compute_readability(text, total)
                         if with_readability else None),
+        "writingStats": compute_writing_stats(text),
     }
 
 
@@ -1102,6 +1214,7 @@ def payload(pieces, text, vocab_base, target_level=None, suggest=False,
         "cambridge": None,
         "cando": None,
         "readability": pieces["readability"],
+        "writingStats": pieces["writingStats"],
     }
 
     if target_level is not None:

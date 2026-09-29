@@ -152,7 +152,8 @@ import vocab_profile as vp
 from analysis import (
     SCHEMA_VERSION, _CEFR_ORDER, _LEVEL_INDEX, _resolve_construction,
     blend_level, build_verdict, cambridge_for, cambridge_mapping, cando_for,
-    cando_mapping, compute_readability, count_sentences, count_syllables,
+    cando_mapping, compute_readability, compute_writing_stats, count_sentences,
+    count_syllables,
     coverage_figure, curriculum_report, grammar_criteria, grammar_gap_report,
     load_curriculum, load_synonyms, payload_schema, structures_above_target,
     validate_curriculum, word_contexts, words_above_target, CurriculumError,
@@ -163,7 +164,8 @@ from analysis import (
 __all__ = [
     "SCHEMA_VERSION", "_CEFR_ORDER", "_LEVEL_INDEX", "_resolve_construction",
     "blend_level", "build_verdict", "cambridge_for", "cambridge_mapping",
-    "cando_for", "cando_mapping", "compute_readability", "count_sentences",
+    "cando_for", "cando_mapping", "compute_readability", "compute_writing_stats",
+    "count_sentences",
     "count_syllables", "coverage_figure", "curriculum_report",
     "grammar_criteria", "grammar_gap_report", "load_curriculum",
     "load_synonyms", "payload_schema", "structures_above_target",
